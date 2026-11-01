@@ -1,0 +1,11 @@
+{
+  "name": "codex-loop-local",
+  "owner": {"name": "Jermaine Tan"},
+  "plugins": [
+    {
+      "name": "codex-loop",
+      "source": "./",
+      "description": "Plan -> review -> code workflow with OpenAI Codex as a read-only, sandboxed reviewer."
+    }
+  ]
+}

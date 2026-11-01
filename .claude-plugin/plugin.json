@@ -1,0 +1,6 @@
+{
+  "name": "codex-loop",
+  "version": "0.2.0",
+  "description": "Plan -> review -> code workflow with OpenAI Codex as a read-only, sandboxed reviewer, driven by a Stop hook.",
+  "author": {"name": "Jermaine Tan"}
+}
