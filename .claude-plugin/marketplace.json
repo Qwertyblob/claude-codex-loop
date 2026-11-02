@@ -1,6 +1,6 @@
 {
   "name": "codex-loop-local",
-  "owner": {"name": "Jermaine Tan"},
+  "owner": {"name": "Jarvis"},
   "plugins": [
     {
       "name": "codex-loop",
