@@ -26,6 +26,12 @@ Codex only reviews. It works on a sanitized, read-only copy of your project and 
    pass, Codex reviews only that phase's changes. After consensus, Claude summarizes the phase and waits for
    you before starting the next one.
 
+Codex also gets your own words. Every prompt you send and every answer you give to Claude's questions is
+recorded verbatim (secrets redacted) in `.reviews/prompts.jsonl`, and each plan and code review includes the
+ones since work on that plan began. Codex checks Claude's plan and code against what you actually said, not
+only against Claude's summary of it, and flags anything Claude misread, narrowed, dropped or added (an
+`Intent:` finding). If Claude disagrees with one, the question comes to you, because only you know what you meant.
+
 Questions about preferences, such as JSON vs TOML or strict vs lenient, and changes that would expand the plan's
 scope, always come to you, batched into one message per round. Your answers are recorded in
 `docs/plans/<plan>-decisions.md`, and Codex is told not to raise them again. If Claude and Codex still disagree
@@ -117,6 +123,8 @@ To opt out, delete `.codex-loop.json`.
 
 - Ask for a feature. Claude writes a plan, and the review runs when Claude ends its turn. A Codex review can take
   up to about 15 minutes.
+- Each round's findings file (`.reviews/<plan>/<stage>/round-N-findings.md`) records the tokens Codex used for
+  it. The `effort` setting is the biggest lever on that cost.
 - `/codex-loop:status` shows the current plan, stage, round, last verdict and any open questions or disputes.
 - You get a macOS notification when a review reaches consensus or deadlock, fails, or needs your answers, and
   whenever Claude is waiting for your input. Set `CODEX_REVIEW_NOTIFY=0` to turn notifications off.
@@ -180,7 +188,7 @@ Codex didn't see, so you can check them yourself.
 |---|---|---|
 | `.codex-loop.json` | yes | Opt-in marker and settings |
 | `docs/plans/*.md` | yes | Plans and `<plan>-decisions.md` decision logs |
-| `.reviews/` | no (gitignored) | `ready.json`, `state.json`, `latest.md`, `errors.log`, and each round's findings and responses |
+| `.reviews/` | no (gitignored) | `ready.json`, `state.json`, `latest.md`, `errors.log`, `prompts.jsonl` (your messages, for Codex), and each round's findings and responses |
 | `.codexreviewignore` | yes | Optional extra rules for which files Codex sees |
 
 ## Troubleshooting
@@ -211,5 +219,6 @@ python3 scripts/test_codex_review.py -v
 | `scripts/codex_review.py` | Stop hook: stages the sanitized copy, runs Codex, tracks rounds and disputes. Also has the `phase-start` command. |
 | `scripts/session_start.py` | SessionStart hook: loads `templates/protocol.md` (the workflow rules) in opted-in projects |
 | `scripts/notify_input.py` | Notification hook: macOS notification when Claude is waiting for you |
+| `scripts/log_prompt.py` | UserPromptSubmit and PostToolUse (AskUserQuestion) hook: records your messages for Codex |
 | `scripts/init.py`, `scripts/status.py` | `/codex-loop:init` and `/codex-loop:status` |
 | `scripts/codex_mock.py` | Mock Codex used by the tests |

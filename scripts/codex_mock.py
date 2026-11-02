@@ -20,6 +20,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 SCENARIOS = {
@@ -330,6 +331,16 @@ def log_call(argv, prompt, rnd, scenario):
                             "diff": diff, "env_keys": sorted(os.environ)}) + "\n")
 
 
+def emit(argv, text):
+    """Print Codex's answer like the real CLI: plain text, or `--json` events (session start, answer, token usage)."""
+    if "--json" not in argv:
+        print(text)
+        return
+    print(json.dumps({"type": "thread.started", "thread_id": str(uuid.uuid4())}))
+    print(json.dumps({"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": text}}))
+    print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": len(text), "output_tokens": len(text)}}))
+
+
 def main():
     argv = sys.argv[1:]
     out_file = argv[argv.index("-o") + 1] if "-o" in argv else None
@@ -354,14 +365,14 @@ def main():
         text = "".join(f"{k}: CONCEDED - Claude's evidence holds; verified.\n" for k in keys) + "\nVERDICT: APPROVED"
         if out_file:
             Path(out_file).write_text(text)
-        print(text)
+        emit(argv, text)
         return 0
     text = SCENARIOS[scenario].replace("{cwd}", str(Path.cwd())).replace("{line}", str(rnd + 3))
     if os.environ.get("CODEX_REVIEW_MOCK_IGNORE_DECISIONS") != "1" and not text.lstrip().startswith("{"):
         text = drop_decided(text, prompt)
     if out_file:
         Path(out_file).write_text(text)
-    print(text)
+    emit(argv, text)
     return 0
 
 

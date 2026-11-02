@@ -181,6 +181,10 @@ class LoopTest(unittest.TestCase):
         self.assertIn("Round 1: Codex findings", prompt2)    # previous findings
         self.assertIn("Added backup step", prompt2)          # previous response
         self.assertIn("Add a config loader", prompt2)        # assignment
+        for call in self.calls():  # every round is a fresh session that reports its token use
+            self.assertIn("--ephemeral", call["argv"])
+            self.assertIn("--json", call["argv"])
+        self.assertRegex(self.findings(1), r"- Reviewer: `[^`]+`; tokens: input \d")
 
         # Claude writes its summary and stops; ready.json is unchanged, so no new round
         self.assertIsNone(self.hook("blocker,approved", stop_active=True))
@@ -1873,6 +1877,115 @@ class LoopTest(unittest.TestCase):
         self.assertIn("Tell the user what failed", out["reason"])  # handed to Claude, not just shown
         self.assertFalse((self.root / ".reviews/.lock").exists())
         self.assertNotIn("decision", self.hook("approved", stop_active=True) or {})  # never loops
+
+    # -- the user's own words reach Codex -----------------------------------
+    def say(self, text=None, answers=None):
+        """Play the user: submit a prompt, or answer an AskUserQuestion question, through log_prompt.py."""
+        if answers is None:
+            payload = {"session_id": "t", "hook_event_name": "UserPromptSubmit", "cwd": str(self.root),
+                       "prompt": text}
+        else:
+            payload = {"session_id": "t", "hook_event_name": "PostToolUse", "cwd": str(self.root),
+                       "tool_name": "AskUserQuestion",
+                       "tool_input": {"questions": [{"question": q} for q in answers]},
+                       "tool_response": {"answers": answers}}
+        p = subprocess.run([sys.executable, str(HERE / "log_prompt.py")], input=json.dumps(payload), text=True,
+                           capture_output=True, env=self.env("approved"), timeout=30)
+        self.assertEqual((p.returncode, p.stdout), (0, ""), p.stderr)  # never adds to Claude's context
+
+    def prompt_log(self):
+        p = self.root / cr.PROMPT_LOG
+        return [json.loads(line) for line in p.read_text().splitlines()] if p.exists() else []
+
+    def test_prompt_hook_records_the_users_words_redacted(self):
+        self.say(f"Add a config loader. My key is sk-{CANARY}canary1234567890ab")
+        self.say("/codex-loop:status")  # the plugin's own commands are not about the work
+        self.say(answers={"Which format?": "JSON, keep it simple"})
+        log = self.prompt_log()
+        self.assertEqual([e["kind"] for e in log], ["prompt", "answer"])
+        self.assertIn("Add a config loader.", log[0]["text"])
+        self.assertNotIn(CANARY, json.dumps(log))
+        self.assertEqual(log[1]["text"], "Q: Which format?\nA: JSON, keep it simple")
+        (self.root / ".codex-loop.json").unlink()
+        self.say("not opted in")
+        self.assertEqual(len(self.prompt_log()), 2)
+
+    def test_user_words_reach_plan_and_code_reviews(self):
+        self.say("Add a config loader, and keep the legacy table for now")
+        self.ready()
+        self.hook("approved")
+        prompt = self.calls()[0]["prompt"]
+        self.assertIn("## The user's own words (recorded by a hook)", prompt)
+        self.assertIn("> Add a config loader, and keep the legacy table for now", prompt)
+        self.assertIn("Start the title\n  with `Intent:`", prompt)
+
+        self.say("Also log every config load")  # a change asked for after the plan was approved
+        self.phase_start(1)
+        (self.root / "src/config.py").write_text("def parse_config(path):\n    return {'a': 1}\n")
+        self.ready(type="code", phase=1)
+        self.hook("approved")
+        prompt = self.calls()[1]["prompt"]
+        self.assertIn("> Add a config loader, and keep the legacy table for now", prompt)
+        self.assertIn("> Also log every config load", prompt)
+        self.assertIn("report changes the user asked for\nafter approval", prompt)
+
+    def test_a_new_plan_gets_only_the_words_since_the_previous_plan(self):
+        self.say("Build the first feature")
+        self.ready()
+        self.hook("approved")
+        self.say("Now build a second feature")
+        plan2 = "docs/plans/2026-10-28-second.md"
+        (self.root / plan2).write_text(PLAN_TEXT)
+        self.ready(plan_path=plan2)
+        self.hook("approved")
+        prompt = self.calls()[1]["prompt"]
+        self.assertIn("> Now build a second feature", prompt)
+        self.assertNotIn("Build the first feature", prompt)
+
+    def test_no_recorded_words_says_so(self):
+        self.ready()
+        self.hook("approved")
+        self.assertIn("do not raise Intent findings without the user's words to cite", self.calls()[0]["prompt"])
+
+    def test_long_messages_are_shortened_for_codex(self):
+        self.say("Add a config loader")
+        self.say("here is the log:\n" + "x" * 50_000)  # a long paste
+        block = cr.user_words_block(self.root, 0)
+        self.assertIn("> Add a config loader", block)
+        self.assertIn("more characters omitted]", block)
+        self.assertLess(len(block), cr.USER_WORDS_MAX_CHARS)
+
+    def test_older_rounds_are_shortened_except_open_disputes(self):
+        stage = self.root / ".reviews" / PID / "plan"
+        stage.mkdir(parents=True)
+        (stage / "round-1-findings.md").write_text(
+            "header\n---\n### F1 [MAJOR] Missing rollback\nStatus: NEW\nRefs: -\nEvidence: ROLLBACK-EVIDENCE\n"
+            "Recommendation: add one\n\n### F2 [MINOR] Typo in title\nStatus: NEW\nRefs: -\n"
+            "Evidence: TYPO-EVIDENCE\nRecommendation: fix\n\nVERDICT: CHANGES_REQUESTED\n")
+        (stage / "round-1-response.md").write_text("### F1: REJECT [FACT]\nROLLBACK-ARGUMENT\n\n"
+                                                   "### F2: ACCEPT\nTYPO-FIXED\n")
+        (stage / "round-2-findings.md").write_text("header\n---\n### F1 [NIT] Wording\nROUND-2-TEXT\n")
+        (stage / "round-2-response.md").write_text("ROUND-2-RESPONSE\n")
+        hist = cr.history_block(stage, 2, {"R1-F1"})
+        self.assertIn("- R1-F2 [MINOR] Typo in title: Claude ACCEPT", hist)
+        self.assertNotIn("TYPO-EVIDENCE", hist)          # settled: one line only
+        self.assertIn("ROLLBACK-EVIDENCE", hist)          # still disputed: in full, with Claude's side
+        self.assertIn("ROLLBACK-ARGUMENT", hist)
+        self.assertIn("ROUND-2-TEXT", hist)               # the latest round always in full
+        self.assertIn("ROUND-2-RESPONSE", hist)
+        self.assertNotIn("ROLLBACK-EVIDENCE", cr.history_block(stage, 2, set()))
+
+    def test_intent_dispute_always_goes_to_the_owner(self):
+        self.set_mode("defer")  # even where a MAJOR preference would be assumed instead of asked
+        self.ready()
+        self.hook("preference,approved")
+        self.respond("plan", 1, "### F1: REJECT [INTENT]\nThe user asked for JSON in their first message.\n\n"
+                                "### F2: ACCEPT\nNow fails fast.\n")
+        self.ready(round=2)
+        out = self.hook("preference,approved", stop_active=True)
+        self.assert_blocked(out, "OWNER QUESTIONS (1)", "R1-F1 [MAJOR]",
+                            "Codex and you read the user's request differently")
+        self.assertEqual(len(self.calls()), 1, "Codex must not run while the owner's answer is pending")
 
 
 if __name__ == "__main__":
