@@ -33,6 +33,16 @@ edits files.
 - Before writing any code for phase N, record its diff base:
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex_review.py" phase-start docs/plans/<plan>.md N`
   (Codex then reviews only this phase's changes, even if nothing was committed in between.)
+  Outside a git repository it stores a file snapshot in `.reviews/snapshots/` instead. A code review without a
+  phase-start base fails (in git repositories too), so never skip this step. When resuming a phase (after
+  `/clear` or in a new session), do not run it again: it refuses, because a new base would hide the changes made so
+  far. Use `--reset` only when the user explicitly wants the phase's diff to start over from the current state.
+- Changes made after a stage's last Codex review (including MINOR/NIT fixes applied after consensus) are never
+  reviewed by it. The next `phase-start` lists them and refuses: tell the user, who chooses between a new review of
+  that stage (rewrite `.reviews/ready.json` for it) and starting anyway (`--owner-approved`, on their say-so).
+- Codex never sees withheld files (secrets, data, unsupported types). If the phase changed any, the review result
+  lists them as not reviewed: tell the user, and check them yourself. A phase whose only changes are in withheld
+  files, or that has no changes, is not reviewed at all.
 - When phase N is complete and its tests pass, request a review with `"type": "code"`, `"phase": N`.
 - After review consensus, summarize for the user and wait for their go-ahead before starting phase N+1.
   `phase-start N` refuses unless the previous stage (the plan, or phase N-1) reached consensus or the user decided
@@ -54,7 +64,7 @@ Write `.reviews/ready.json`:
 ```
 
 Optional fields: `"base"` (a git ref to diff against for code reviews, which overrides the phase-start
-snapshot), and `"attempt"` (increment it to retry after an error, but only when the user asks).
+snapshot; git repositories only), and `"attempt"` (increment it to retry after an error, but only when the user asks).
 Then end your turn. The hook runs Codex (up to ~15 min) and continues you with the findings.
 
 ## 5. Handling findings (each round)
@@ -208,6 +218,8 @@ what happened and what they can do next, then stopping:
 | Codex error / timeout | that the review did not run, and why | retry (`"attempt"`), or fix the cause first |
 | Hook failure, review already running | what happened | retry later; nothing is lost |
 | Invalid `ready.json` you cannot fix | what is wrong | fix it together |
+| No phase-start base | that the phase base was never recorded, so the phase's changes cannot be isolated | they decide: never run `phase-start` after the fact on your own, it would hide the changes |
+| Nothing to review | that the phase has no changes, or only changes in withheld files (listed) | review those files themselves, share a file type with `!pattern` in `.codexreviewignore`, or retry once the work is in place |
 | `phase-start` refused | the open items it lists (unreviewed stage, a requested re-review that has not run yet, open deadlock items, assumptions) | resolve them, or start anyway with `--owner-approved` |
 
 If the user makes no decision, for any reason, change nothing: leave `ready.json` and the decisions file

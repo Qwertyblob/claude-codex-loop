@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Opt the current project into codex-loop (used by /codex-loop:init).
 
-Checks git and codex login, runs the mock test suite, and only if all of that passes
-creates .codex-loop.json, docs/plans/ and the .reviews/ .gitignore entry. Safe to re-run.
+Checks that git is installed (a repository is optional) and codex login, runs the mock test suite,
+and only if all of that passes creates .codex-loop.json, docs/plans/ and the .reviews/ .gitignore entry. Safe to re-run.
 CODEX_LOOP_TEST_SCRIPT overrides the suite (used by the tests).
 """
 import json
@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+SUITE_TIMEOUT = 300  # the suite takes about a minute; fail clearly instead of hanging
 
 
 def check(label, ok, detail):
@@ -32,8 +33,15 @@ def main() -> int:
     root = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()).resolve()
     print(f"Project: {root}\n")
 
-    code, out = run(["git", "rev-parse", "--show-toplevel"], root)
-    git_ok = check("git", code == 0, out if code == 0 else "not a git repository (run `git init`)")
+    # The git program is needed (each review builds a throwaway repo); a repository is not.
+    if shutil.which("git"):
+        git_ok = True
+        code, out = run(["git", "rev-parse", "--show-toplevel"], root)
+        check("git", True, out if code == 0 else
+              "not a repository; phase diffs will use file snapshots in .reviews/ (no git init needed)")
+    else:
+        git_ok = check("git", False, "git not found on PATH (install it, e.g. `xcode-select --install` or "
+                                     "your package manager; no repository is needed)")
     codex = shutil.which("codex")
     if codex:
         code, out = run([codex, "login", "status"], root)
@@ -47,8 +55,14 @@ def main() -> int:
     # Run the suite before anything is created, so a failed setup never leaves the project opted in.
     print("\nRunning the mock test suite...")
     suite = os.environ.get("CODEX_LOOP_TEST_SCRIPT") or str(HERE / "test_codex_review.py")
-    p = subprocess.run([sys.executable, suite], capture_output=True, text=True,
-                       env={k: v for k, v in os.environ.items() if k != "CODEX_LOOP_LIVE_TEST"})
+    try:
+        p = subprocess.run([sys.executable, suite], capture_output=True, text=True, timeout=SUITE_TIMEOUT,
+                           env={k: v for k, v in os.environ.items() if k != "CODEX_LOOP_LIVE_TEST"})
+    except subprocess.TimeoutExpired:
+        print(f"\nThe test suite did not finish within {SUITE_TIMEOUT}s. Nothing was changed"
+              + (" (the existing .codex-loop.json was kept)." if (root / ".codex-loop.json").exists() else
+                 "; the project is NOT opted in."))
+        return 1
     tail = (p.stderr or p.stdout).strip().splitlines()
     print("\n".join(tail[-3:]) if p.returncode == 0 else (p.stderr or p.stdout))
     if p.returncode != 0:

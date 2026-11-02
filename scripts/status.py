@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from codex_review import CodexError, decisions_path, gate_check, project_root, review_settings  # noqa: E402
+from codex_review import (CodexError, StateError, decisions_path, gate_check, load_state,  # noqa: E402
+                          project_root, review_settings)
 
 
 def main() -> int:
@@ -17,8 +18,11 @@ def main() -> int:
         return 0
     reviews = root / ".reviews"
     try:
-        state = json.loads((reviews / "state.json").read_text())
-    except (OSError, ValueError):
+        state = load_state(root)
+    except (StateError, OSError) as e:
+        print(f"Review state unreadable: {e}")
+        return 1
+    if not state:
         print("No reviews yet (.reviews/state.json not found).")
         return 0
     stages = state.get("stages", {})
@@ -86,7 +90,7 @@ def main() -> int:
         print(f"Last attempt: ERROR at {rows.get('Updated', '?')} ({rows.get('Stage', '?')}): "
               f"{rows.get('Error', '?')} (see .reviews/errors.log)")
     nxt = 1 if stage == "plan" else int(stage.split("-")[1]) + 1
-    problems = gate_check(root, state, pid, nxt)
+    problems = gate_check(root, state, pid, nxt, f"docs/plans/{pid}.md")
     dec = decisions_path(root, pid)
     approvals = re.findall(rf"^## DECISION \[GATE\] Start phase {nxt} with open gate items$(?:\n- .*)*?"
                            r"\n- Approved by the owner: (.+)$", dec.read_text() if dec.is_file() else "", re.M)

@@ -243,6 +243,23 @@ Review comment:
 
 - [P2] Rename the flag \u2014 {cwd}/src/loader.py:1-1
   Status: NEW; Refs: -. The flag name is unconventional.
+
+VERDICT: APPROVED""",
+
+    # the same, cut off before the VERDICT line: must not pass
+    "prose_concede_truncated": """R3-F1: CONCEDED\u2014the backup runs in phase 1.
+
+Review comment:
+
+- [P2] Rename the flag \u2014 {cwd}/src/loader.py:1-1
+  Status: NEW; Refs: -. The flag name is unconventional.
+""",
+
+    # MINOR findings only, cut off before the VERDICT line: must not pass
+    "minor_truncated": """### F1 [MINOR] Consider naming the CLI flag --dry-run
+Status: NEW
+Refs: -
+Evidence: The plan calls it --test.
 """,
 
     # a bare concession with no findings and no VERDICT line, as seen live
@@ -330,6 +347,14 @@ def main():
         return 1
     if scenario == "timeout":
         time.sleep(120)
+        return 0
+    if scenario == "concede_disputes":  # explicitly concede every outstanding dispute, then approve
+        section = prompt.split("## Outstanding disputes", 1)[-1].split("\n## ", 1)[0] if "## Outstanding disputes" in prompt else ""
+        keys = list(dict.fromkeys(re.findall(r"^- (R\d+-F\d+) \[", section, re.M)))
+        text = "".join(f"{k}: CONCEDED - Claude's evidence holds; verified.\n" for k in keys) + "\nVERDICT: APPROVED"
+        if out_file:
+            Path(out_file).write_text(text)
+        print(text)
         return 0
     text = SCENARIOS[scenario].replace("{cwd}", str(Path.cwd())).replace("{line}", str(rnd + 3))
     if os.environ.get("CODEX_REVIEW_MOCK_IGNORE_DECISIONS") != "1" and not text.lstrip().startswith("{"):
