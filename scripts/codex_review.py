@@ -1697,10 +1697,14 @@ def consensus_handback(root: Path, plan_path: str, stage: str, stage_dir_rel: st
              f"({stage_dir_rel}/round-*-findings.md), one line each: what it was, and whether you fixed it (not "
              "re-reviewed by Codex) or left it, and why. Write \"none\" if there were none.")
     if stage == "plan":
-        return f"""Then show the user the FINAL plan: the full text of {plan_path} as it is now, after the review's changes.
-After it, summarize the review: the rounds run and the final verdict; what changed because of the review; what you
-rejected and why, and whether Codex conceded; any owner decisions. Sources: {stage_dir_rel}/round-*-findings.md and
-round-*-response.md.
+        return f"""REQUIRED: your final message to the user must START with the FINAL plan: the full text of {plan_path} as it
+is now, after the review's changes (and any MINOR/NIT fixes you applied). Read the file, then reproduce it verbatim
+in your reply as markdown, from its first line to its last. The user does not see tool output, so reading the file,
+linking it, or naming its path does NOT show it to them; a summary, excerpt, or list of changes is not a substitute.
+Do not shorten it, however long it is.
+After the full plan, summarize the review: the rounds run and the final verdict; what changed because of the review;
+what you rejected and why, and whether Codex conceded; any owner decisions. Sources:
+{stage_dir_rel}/round-*-findings.md and round-*-response.md.
 {minor}
 Then stop and wait for the user's approval of the plan."""
     n = int(stage.split("-")[1])
@@ -1860,7 +1864,8 @@ def review_round(root: Path, raw: bytes, state: dict) -> dict:
 decisions in {rel_dec}, and nothing new was accepted, so round {rnd} was not run.
 Do NOT write or modify .reviews/ready.json (except as described below for overridden assumptions).
 {consensus_handback(root, ready["plan_path"], stage, rel(stage_dir))}{assumptions_block(owner_entries(root, pid), rel_dec, gate_ready | {"round": rnd}, state)}"""
-            return block(redact(reason), f"Codex review: CONSENSUS on {label} (owner decisions).")
+            return block(redact(reason), f"Codex review: CONSENSUS on {label} (owner decisions)."
+                         + (f" Final plan: {ready['plan_path']}" if stage == "plan" else ""))
         if cycle_round > limit and not accepted:
             # past the round limit with nothing accepted to verify: only disputes remain
             open_desc = record_limit_deadlock(root, st, limit_info, rnd - 1)
@@ -2030,7 +2035,8 @@ Remaining MINOR/NIT findings are your judgment call: apply the ones you agree wi
 decisions in {rel(response_path)}. Ask the user first before applying any that expands scope beyond the approved
 plan, and record the answer in {decisions_path(root, pid).relative_to(root).as_posix()}.
 {consensus_handback(root, ready["plan_path"], stage, rel(stage_dir))}{assumptions_block(entries, decisions_path(root, pid).relative_to(root).as_posix(), {k: v for k, v in (("type", ready["type"]), ("plan_path", ready["plan_path"]), ("phase", ready["phase"]), ("round", rnd + 1), ("base", ready.get("base"))) if k != "base" or v}, state)}"""
-        return block(redact(reason), redact(f"Codex review: CONSENSUS on {label} (round {rnd}).{user_note}"))
+        plan_note = f" Final plan: {ready['plan_path']}" if stage == "plan" else ""
+        return block(redact(reason), redact(f"Codex review: CONSENSUS on {label} (round {rnd}).{plan_note}{user_note}"))
 
     if deadlock:
         notify("Codex review: deadlock", f"{label}: no consensus after {cycle_round} rounds")

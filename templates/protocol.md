@@ -103,7 +103,9 @@ dispute, it stays open and Codex is asked again; you don't need to respond to it
 **Consensus** means no unresolved BLOCKER/MAJOR findings remain (these are the "bugs"). MINOR and NIT findings
 are your call and never force another round, but they are always reported to the user. On consensus, do not touch
 `ready.json`, and tell the user:
-- after a **plan** review: the final plan in full (as revised by the review), then a summary of the review;
+- after a **plan** review: first the final plan in full (as revised by the review), reproduced verbatim in your
+  reply (the user does not see tool output, so a path, a file read, or a summary does not count), then a summary
+  of the review;
 - after a **code** review: a summary of what the phase built and what the review found and fixed;
 - in both cases: what you rejected and why (and whether Codex conceded), and every MINOR/NIT finding from all
   rounds, each with whether you fixed it (fixes after consensus are not re-reviewed) or left it, and why.

@@ -168,9 +168,11 @@ class LoopTest(unittest.TestCase):
         self.ready(round=2)
         out = self.hook("blocker,approved", stop_active=True)
         self.assert_blocked(out, "CONSENSUS", "Do NOT write or modify .reviews/ready.json",
-                            f"show the user the FINAL plan: the full text of {PLAN}",
+                            f"must START with the FINAL plan: the full text of {PLAN}",
+                            "reproduce it verbatim", "naming its path does NOT show it",
                             "report EVERY MINOR/NIT finding Codex raised in this review, in all rounds",
                             "wait for the user's approval of the plan")
+        self.assertIn(f"Final plan: {PLAN}", out["systemMessage"])
         self.assertIn("CONSENSUS", (self.root / ".reviews/latest.md").read_text())
         self.assertIn("consensus", self.notes())
 
