@@ -22,6 +22,10 @@ Or set plan and code reviews separately:
 }
 ```
 
+- `/codex-loop:init` fills in `model` and `effort` when it creates `.codex-loop.json`, using `model` and
+  `model_reasoning_effort` from `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`). They are then fixed for
+  the project: a later change to the Codex config does not affect them. An existing `.codex-loop.json` is kept
+  as is; delete it and re-run init to pick up the current defaults.
 - If you leave out `model` or `effort`, Codex uses its default from `~/.codex/config.toml` (currently
   `gpt-6-astra` at `xhigh`).
 - The environment variable `CODEX_REVIEW_MODEL=<model>` overrides `model` for every review.

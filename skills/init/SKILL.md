@@ -1,6 +1,6 @@
 ---
 name: init
-description: Opt the current project into the codex-loop review workflow. Checks that git is installed (no repository needed) and codex is logged in, runs the mock test suite, and only if it passes creates .codex-loop.json, docs/plans/ and the .reviews/ .gitignore entry.
+description: Opt the current project into the codex-loop review workflow. Checks that git is installed (no repository needed) and codex is logged in, runs the mock test suite, and only if it passes creates .codex-loop.json (with the Codex default model and effort), docs/plans/ and the .reviews/ .gitignore entry.
 disable-model-invocation: true
 allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/init.py)
 ---

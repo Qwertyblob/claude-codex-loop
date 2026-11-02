@@ -3,6 +3,8 @@
 
 Checks that git is installed (a repository is optional) and codex login, runs the mock test suite,
 and only if all of that passes creates .codex-loop.json, docs/plans/ and the .reviews/ .gitignore entry. Safe to re-run.
+A new .codex-loop.json gets the current Codex defaults (model and model_reasoning_effort from
+$CODEX_HOME/config.toml, default ~/.codex) written out as "model" and "effort"; an existing one is kept as is.
 CODEX_LOOP_TEST_SCRIPT overrides the suite (used by the tests).
 """
 import json
@@ -13,6 +15,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from codex_review import EFFORTS, MODEL_RE  # noqa: E402
 SUITE_TIMEOUT = 300  # the suite takes about a minute; fail clearly instead of hanging
 
 
@@ -27,6 +31,27 @@ def run(cmd, cwd):
         return p.returncode, (p.stdout + p.stderr).strip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return 1, str(e)
+
+
+def codex_defaults():
+    """The model and effort Codex uses when none is given, from its config.toml. Missing or invalid values are left
+    out (Codex then uses its built-in default), and the second item says why for the init output."""
+    cfg = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "config.toml"
+    try:
+        import tomllib
+        data = tomllib.loads(cfg.read_text())
+    except FileNotFoundError:
+        return {}, f"{cfg} not found"
+    except Exception as e:  # unreadable, unparseable, or Python < 3.11
+        return {}, f"could not read {cfg} ({e})"
+    out = {}
+    model, effort = data.get("model"), data.get("model_reasoning_effort")
+    if isinstance(model, str) and MODEL_RE.match(model):
+        out["model"] = model
+    if isinstance(effort, str) and effort in EFFORTS:
+        out["effort"] = effort
+    missing = [k for k in ("model", "effort") if k not in out]
+    return out, (f"{', '.join(missing)} not set (or not valid) in {cfg}" if missing else str(cfg))
 
 
 def main() -> int:
@@ -75,8 +100,12 @@ def main() -> int:
     if cfg.exists():
         print(f"\n[keep] {cfg.name} already exists")
     else:
-        cfg.write_text(json.dumps({"version": 1, "ask_mode": "interrupt"}, indent=2) + "\n")
+        defaults, source = codex_defaults()
+        cfg.write_text(json.dumps({"version": 1, "ask_mode": "interrupt", **defaults}, indent=2) + "\n")
         print(f"\n[new]  {cfg.name}")
+        for name in ("model", "effort"):
+            print(f"       {name}: {defaults.get(name, 'not written; Codex uses its built-in default')}")
+        print(f"       (Codex defaults from {source}; edit .codex-loop.json to change them, see CODEX_MODELS.md)")
     plans = root / "docs" / "plans"
     plans.mkdir(parents=True, exist_ok=True)
     keep = plans / ".gitkeep"

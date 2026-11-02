@@ -730,7 +730,7 @@ class LoopTest(unittest.TestCase):
         self.assertIn("phase 2 blocked: phase-1 R1-F1 (Store settings in TOML instead of JSON) was overridden", st)
         self.assertNotIn("R1-F2 (", st, "a confirmed assumption is not reported as blocking")
 
-    def run_init(self, suite_rc):
+    def run_init(self, suite_rc, **extra):
         bin_dir = Path(self.tmp.name) / "bin"
         bin_dir.mkdir(exist_ok=True)
         for name, body in (("codex", 'echo "Logged in using ChatGPT"'),):
@@ -739,7 +739,7 @@ class LoopTest(unittest.TestCase):
         suite = Path(self.tmp.name) / "suite.py"
         suite.write_text(f"import sys\nprint('suite ran')\nsys.exit({suite_rc})\n")
         env = {**self.env("approved"), "PATH": f"{bin_dir}:{os.environ['PATH']}",
-               "CODEX_LOOP_TEST_SCRIPT": str(suite)}
+               "CODEX_LOOP_TEST_SCRIPT": str(suite), **extra}
         return subprocess.run([sys.executable, str(HERE / "init.py")], env=env, capture_output=True, text=True)
 
     def test_failed_init_leaves_project_opted_out(self):
@@ -758,6 +758,32 @@ class LoopTest(unittest.TestCase):
         cfg.write_text('{"version": 1, "ask_mode": "defer"}')
         self.assertEqual(self.run_init(1).returncode, 1)
         self.assertIn("defer", cfg.read_text(), "a failed re-run keeps the existing configuration")
+
+    def test_init_writes_codex_default_model_and_effort(self):
+        cfg = self.root / ".codex-loop.json"
+        home = Path(self.tmp.name) / "codex-home-defaults"
+        home.mkdir()
+        (home / "config.toml").write_text('model = "gpt-test"\nmodel_reasoning_effort = "xhigh"\n'
+                                          '[profiles.other]\nmodel = "ignored"\n')
+        cfg.unlink()
+        p = self.run_init(0, CODEX_HOME=str(home))
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertEqual(json.loads(cfg.read_text()),
+                         {"version": 1, "ask_mode": "interrupt", "model": "gpt-test", "effort": "xhigh"})
+        self.assertIn("model: gpt-test", p.stdout)
+        # an existing file is kept as is, even when it has no model or effort
+        cfg.write_text('{"version": 1, "ask_mode": "defer"}')
+        self.assertEqual(self.run_init(0, CODEX_HOME=str(home)).returncode, 0)
+        self.assertEqual(json.loads(cfg.read_text()), {"version": 1, "ask_mode": "defer"})
+        # no config.toml, or an invalid effort: that key is left out and Codex keeps its built-in default
+        (home / "config.toml").write_text('model = "gpt-test"\nmodel_reasoning_effort = "ultra"\n')
+        cfg.unlink()
+        p = self.run_init(0, CODEX_HOME=str(home))
+        self.assertEqual(json.loads(cfg.read_text()), {"version": 1, "ask_mode": "interrupt", "model": "gpt-test"})
+        self.assertIn("effort: not written", p.stdout)
+        cfg.unlink()
+        self.assertEqual(self.run_init(0).returncode, 0)  # the suite's empty Codex home
+        self.assertEqual(json.loads(cfg.read_text()), {"version": 1, "ask_mode": "interrupt"})
 
     def test_status_shows_pending_owner_questions(self):
         status = lambda: subprocess.run([sys.executable, str(HERE / "status.py")], env=self.env("approved"),

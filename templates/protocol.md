@@ -197,9 +197,9 @@ volunteers at any other time go in the same file, under a heading without a key:
 - `docs/plans/` (tracked): plans and their `<plan-file-name>-decisions.md` owner decisions.
 - `.codex-loop.json`: opt-in marker and settings (`{"version": 1, "ask_mode": "interrupt"}`). Optional `"model"` and
   `"effort"` (Codex reasoning effort: none, minimal, low, medium, high, xhigh, max) set Codex for reviews, either
-  for both kinds (`"effort": "high"`) or per kind (`"effort": {"plan": "xhigh", "code": "medium"}`). Unset means
-  Codex's own default from `~/.codex/config.toml`. Change them only when the user asks. An invalid value stops
-  the review with an error for the user.
+  for both kinds (`"effort": "high"`) or per kind (`"effort": {"plan": "xhigh", "code": "medium"}`). Init writes
+  the Codex defaults from `~/.codex/config.toml` at that time; unset means Codex's own current default. Change
+  them only when the user asks. An invalid value stops the review with an error for the user.
 - `.codexreviewignore` (optional): `pattern` withholds more files from Codex. `!pattern` shares a file type the
   built-in allowlist skips, but can never share secret or data files.
 - Tests: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/test_codex_review.py" -v` (uses the mock reviewer).
